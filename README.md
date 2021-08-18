@@ -11,7 +11,7 @@ $ yarn add sqs-broker
 ### Basic
 
 ```ts
-const broker = createSQSBrokerConsumer({
+const broker = new SQSBrokerConsumer({
   queueUrl: '...',
   onMessage: async message => {
     console.log(message.Body);
@@ -29,7 +29,7 @@ const sqsClient = new SQSClient({
   // secretAccessKey: '',
   endpoint: 'http://localhost:4566',
 });
-const broker = createSQSBrokerConsumer({
+const broker = new SQSBrokerConsumer({
   sqsClient,
   queueUrl: '...',
   maxNumberOfMessages: 10,
@@ -53,7 +53,7 @@ type SQSBrokerConsumerEvents = {
   processing_error: [Error, Message];
 };
 
-const broker = createSQSBrokerConsumer({
+const broker = new SQSBrokerConsumer({
   queueUrl: '...',
   onMessage: async message => {
     console.log(message.Body);
