@@ -2,7 +2,15 @@
   "name": "sqs-broker",
   "version": "0.1.0",
   "license": "MIT",
-  "author": "Munir Ahmed Elsangedy<elsangedy@gmail.com>",
+  "author": {
+    "name": "Munir Ahmed Elsangedy",
+    "email": "elsangedy@gmail.com",
+    "url": "https://github.com/elsangedy"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/elsangedy/sqs-broker"
+  },
   "main": "dist/index.js",
   "module": "dist/sqs-broker.esm.js",
   "typings": "dist/index.d.ts",
