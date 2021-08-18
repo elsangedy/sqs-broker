@@ -4,7 +4,7 @@ import {
   DeleteMessageCommand,
   ReceiveMessageCommand,
 } from '@aws-sdk/client-sqs';
-import mitt from 'mitt';
+import mitt, { Emitter } from 'mitt';
 
 export type SQSBrokerConsumerEvents = {
   empty: void;
@@ -16,8 +16,10 @@ export type SQSBrokerConsumerEvents = {
   processing_error: [Error, Message];
 };
 
-export type SQSBrokerConsumerOptions = {
-  onMessage(message: Message): Promise<void>;
+type MessageHandler = (message: Message) => Promise<void>;
+
+export interface SQSBrokerConsumerOptions {
+  onMessage: MessageHandler;
   queueUrl: string;
   region?: string;
   sqsClient?: SQSClient;
@@ -27,88 +29,133 @@ export type SQSBrokerConsumerOptions = {
   maxNumberOfMessages?: number;
   messageAttributeNames?: string[];
   pollingWaitTimeMs?: number;
-};
+  running?: boolean;
+}
 
-export const createSQSBrokerConsumer = (options: SQSBrokerConsumerOptions) => {
-  const {
-    onMessage,
-    queueUrl,
-    region = process.env.AWS_REGION || 'eu-west-1',
-    sqsClient = new SQSClient({ region }),
-    attributeNames = [],
-    waitTimeSeconds = 20,
-    visibilityTimeout,
-    maxNumberOfMessages = 1,
-    messageAttributeNames = [],
-    pollingWaitTimeMs = 0,
-  } = options;
+export class SQSBrokerConsumer {
+  private onMessage: MessageHandler;
+  private queueUrl: string;
+  private sqsClient: SQSClient;
+  private attributeNames: string[];
+  private waitTimeSeconds: number;
+  private visibilityTimeout?: number;
+  private maxNumberOfMessages: number;
+  private messageAttributeNames: string[];
+  private pollingWaitTimeMs: number;
 
-  let isRunning = false;
+  private running: boolean;
 
-  const emitter = mitt<SQSBrokerConsumerEvents>();
+  private emitter: Emitter<SQSBrokerConsumerEvents>;
+  public on: Emitter<SQSBrokerConsumerEvents>['on'];
+  public off: Emitter<SQSBrokerConsumerEvents>['off'];
 
-  const poll = (): void => {
-    if (!isRunning) {
-      emitter.emit('stopped');
+  constructor(options: SQSBrokerConsumerOptions) {
+    const {
+      onMessage,
+      queueUrl,
+      region = process.env.AWS_REGION || 'eu-west-1',
+      sqsClient = new SQSClient({ region }),
+      attributeNames = [],
+      waitTimeSeconds = 20,
+      visibilityTimeout,
+      maxNumberOfMessages = 1,
+      messageAttributeNames = [],
+      pollingWaitTimeMs = 0,
+      running = false,
+    } = options;
+
+    this.onMessage = onMessage;
+    this.queueUrl = queueUrl;
+    this.sqsClient = sqsClient;
+    this.attributeNames = attributeNames;
+    this.waitTimeSeconds = waitTimeSeconds;
+    this.visibilityTimeout = visibilityTimeout;
+    this.maxNumberOfMessages = maxNumberOfMessages;
+    this.messageAttributeNames = messageAttributeNames;
+    this.pollingWaitTimeMs = pollingWaitTimeMs;
+    this.running = running;
+
+    this.emitter = mitt<SQSBrokerConsumerEvents>();
+    this.on = this.emitter.on;
+    this.off = this.emitter.off;
+
+    if (this.running) {
+      this.poll();
+    }
+  }
+
+  public get isRunning(): boolean {
+    return this.running;
+  }
+
+  private async deleteMessage(message: Message): Promise<void> {
+    await this.sqsClient.send(
+      new DeleteMessageCommand({
+        QueueUrl: this.queueUrl,
+        ReceiptHandle: message.ReceiptHandle,
+      })
+    );
+  }
+
+  private async receiveMessage(): Promise<Message[]> {
+    const response = await this.sqsClient.send(
+      new ReceiveMessageCommand({
+        QueueUrl: this.queueUrl,
+        AttributeNames: this.attributeNames,
+        WaitTimeSeconds: this.waitTimeSeconds,
+        VisibilityTimeout: this.visibilityTimeout,
+        MaxNumberOfMessages: this.maxNumberOfMessages,
+        MessageAttributeNames: this.messageAttributeNames,
+      })
+    );
+
+    return response?.Messages ?? [];
+  }
+
+  private async processMessages(messages: Message[]): Promise<void> {
+    if (messages.length > 0) {
+      await Promise.all(messages.map(message => this.processMessage(message)));
+      this.emitter.emit('response_processed');
+    } else {
+      this.emitter.emit('empty');
+    }
+  }
+
+  private async processMessage(message: Message): Promise<void> {
+    this.emitter.emit('message_received', message);
+    try {
+      await this.onMessage(message);
+      await this.deleteMessage(message);
+      this.emitter.emit('message_processed', message);
+    } catch (err) {
+      this.emitter.emit('processing_error', [err, message]);
+    }
+  }
+
+  private poll(): void {
+    if (!this.isRunning) {
+      this.emitter.emit('stopped');
       return;
     }
 
-    sqsClient
-      .send(
-        new ReceiveMessageCommand({
-          QueueUrl: queueUrl,
-          AttributeNames: attributeNames,
-          WaitTimeSeconds: waitTimeSeconds,
-          VisibilityTimeout: visibilityTimeout,
-          MaxNumberOfMessages: maxNumberOfMessages,
-          MessageAttributeNames: messageAttributeNames,
-        })
-      )
-      .then(async output => {
-        if (output?.Messages?.length) {
-          await Promise.all(
-            output.Messages.map(
-              async (message: Message): Promise<void> => {
-                emitter.emit('message_received', message);
-                try {
-                  await onMessage(message);
-                  await sqsClient.send(
-                    new DeleteMessageCommand({
-                      QueueUrl: queueUrl,
-                      ReceiptHandle: message.ReceiptHandle,
-                    })
-                  );
-                  emitter.emit('message_processed', message);
-                } catch (err) {
-                  emitter.emit('processing_error', [err, message]);
-                }
-              }
-            )
-          );
-          emitter.emit('response_processed');
-        } else {
-          emitter.emit('empty');
-        }
-      })
+    this.receiveMessage()
+      .then(messages => this.processMessages(messages))
       .then(() => {
-        setTimeout(poll, pollingWaitTimeMs);
+        setTimeout(() => this.poll(), this.pollingWaitTimeMs);
       })
       .catch(err => {
-        emitter.emit('error', err);
+        this.emitter.emit('error', err);
       });
-  };
+  }
 
-  return {
-    stop: () => {
-      isRunning = false;
-    },
-    start: () => {
-      if (!isRunning) {
-        isRunning = true;
-        poll();
-      }
-    },
-    on: emitter.on,
-    off: emitter.off,
-  };
-};
+  public start(): void {
+    if (!this.running) {
+      this.running = true;
+      this.poll();
+    }
+  }
+
+  public stop(): void {
+    this.running = false;
+  }
+}
