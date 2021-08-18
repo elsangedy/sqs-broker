@@ -1,12 +1,12 @@
 # sqs-broker
 
-## Instalation
+## Install
 
 ```bash
 $ yarn add sqs-broker
 ```
 
-## Examples
+## Usage
 
 ### Basic
 
