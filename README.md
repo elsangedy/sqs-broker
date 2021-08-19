@@ -11,13 +11,13 @@ $ yarn add sqs-broker
 ### Basic
 
 ```ts
-const broker = new SQSBrokerConsumer({
+const consumer = new SQSBrokerConsumer({
   queueUrl: '...',
   onMessage: async message => {
     console.log(message.Body);
   },
 });
-broker.start();
+consumer.start();
 ```
 
 ### Custom
@@ -29,7 +29,7 @@ const sqsClient = new SQSClient({
   // secretAccessKey: '',
   endpoint: 'http://localhost:4566',
 });
-const broker = new SQSBrokerConsumer({
+const consumer = new SQSBrokerConsumer({
   sqsClient,
   queueUrl: '...',
   maxNumberOfMessages: 10,
@@ -37,7 +37,7 @@ const broker = new SQSBrokerConsumer({
     console.log(message.Body);
   },
 });
-broker.start();
+consumer.start();
 ```
 
 ### Events
@@ -53,14 +53,34 @@ type SQSBrokerConsumerEvents = {
   processing_error: [Error, Message];
 };
 
-const broker = new SQSBrokerConsumer({
+const consumer = new SQSBrokerConsumer({
   queueUrl: '...',
   onMessage: async message => {
     console.log(message.Body);
   },
 });
-broker.on('*', console.log);
-broker.on('message_received', console.log);
-broker.off('message_received', console.log);
-broker.start();
+consumer.on('*', console.log);
+consumer.on('message_received', console.log);
+consumer.off('message_received', console.log);
+consumer.start();
+```
+
+### Producer
+
+```ts
+const producer = new SQSBrokerProducer({
+  queueUrl: '...',
+});
+
+producer.send('My message');
+producer.send({
+  Id: 'my-id',
+  MessageBody: 'My message',
+  DelaySeconds: 10,
+});
+producer.send(['My message 1', 'My message 2']);
+producer.send([
+  { Id: 'my-id-1', MessageBody: 'My message 1' },
+  { Id: 'my-id-2', MessageBody: 'My message 2' },
+]);
 ```
