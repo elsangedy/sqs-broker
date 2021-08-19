@@ -5,6 +5,16 @@ import {
   SendMessageBatchCommand,
 } from '@aws-sdk/client-sqs';
 
+export interface SQSBrokerProducerMessage<T = any> {
+  id: string;
+  body: T;
+  delaySeconds?: number;
+  groupId?: string;
+  deduplicationId?: string;
+  attributes?: SendMessageBatchRequestEntry['MessageAttributes'];
+  systemAttributes?: SendMessageBatchRequestEntry['MessageSystemAttributes'];
+}
+
 export interface SQSBrokerProducerOptions {
   queueUrl: string;
   region?: string;
@@ -33,8 +43,8 @@ export class SQSBrokerProducer {
   public async send(
     messages:
       | string
-      | SendMessageBatchRequestEntry
-      | (string | SendMessageBatchRequestEntry)[]
+      | SQSBrokerProducerMessage
+      | (string | SQSBrokerProducerMessage)[]
   ): Promise<SendMessageBatchResultEntry[]> {
     const messagesArr = !Array.isArray(messages) ? [messages] : messages;
 
@@ -42,8 +52,8 @@ export class SQSBrokerProducer {
       messagesArr.map(message =>
         typeof message === 'string'
           ? {
-              Id: message,
-              MessageBody: message,
+              id: message,
+              body: message,
             }
           : message
       )
@@ -51,7 +61,7 @@ export class SQSBrokerProducer {
   }
 
   private async sendBatch(
-    messages: SendMessageBatchRequestEntry[] = [],
+    messages: SQSBrokerProducerMessage[] = [],
     startIndex: number = 0,
     failedMessages: string[] = [],
     successfulMessages: SendMessageBatchResultEntry[] = []
@@ -62,7 +72,15 @@ export class SQSBrokerProducer {
     const result = await this.sqsClient.send(
       new SendMessageBatchCommand({
         QueueUrl: this.queueUrl,
-        Entries: batch,
+        Entries: batch.map(entry => ({
+          Id: entry.id,
+          MessageBody: entry.body,
+          DelaySeconds: entry.delaySeconds,
+          MessageGroupId: entry.groupId,
+          MessageDeduplicationId: entry.deduplicationId,
+          MessageAttributes: entry.attributes,
+          MessageSystemAttributes: entry.systemAttributes,
+        })),
       })
     );
 

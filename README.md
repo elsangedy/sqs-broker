@@ -74,13 +74,13 @@ const producer = new SQSBrokerProducer({
 
 producer.send('My message');
 producer.send({
-  Id: 'my-id',
-  MessageBody: 'My message',
-  DelaySeconds: 10,
+  id: 'my-id',
+  body: 'My message',
+  delaySeconds: 10,
 });
 producer.send(['My message 1', 'My message 2']);
 producer.send([
-  { Id: 'my-id-1', MessageBody: 'My message 1' },
-  { Id: 'my-id-2', MessageBody: 'My message 2' },
+  { id: 'my-id-1', body: 'My message 1' },
+  { id: 'my-id-2', body: 'My message 2' },
 ]);
 ```
